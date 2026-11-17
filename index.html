@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#000000">
+  <link rel="manifest" href="manifest.json">
+  <title>Modo Concierto Interactivo</title>
+
+  <style>
+    /* Reset & Estilos Base */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      background-color: #000000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #ffffff;
+      touch-action: manipulation;
+    }
+
+    /* Contenedor de Luces de Concierto */
+    #lightCanvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    #flashOverlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.08s ease-out;
+      mix-blend-mode: screen;
+    }
+
+    /* Capa de Inicio (Onboarding / Permisos) */
+    #startScreen {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      text-align: center;
+      background: radial-gradient(circle at center, #151525 0%, #050508 100%);
+      transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.6s;
+    }
+
+    #startScreen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 999px;
+      font-size: 0.75rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #a0a5c0;
+      margin-bottom: 24px;
+      animation: pulseSubtle 3s infinite;
+    }
+
+    .badge-dot {
+      width: 8px;
+      height: 8px;
+      background-color: #00ffaa;
+      border-radius: 50%;
+      box-shadow: 0 0 8px #00ffaa;
+    }
+
+    .title {
+      font-size: clamp(1.8rem, 7vw, 2.8rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      margin-bottom: 36px;
+      background: linear-gradient(135deg, #ffffff 40%, #b3c5ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    /* Botón Principal Llamativo */
+    .btn-concert {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 22px 36px;
+      font-size: clamp(1.1rem, 4.5vw, 1.35rem);
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #000000;
+      background: linear-gradient(135deg, #00f0ff 0%, #ff0077 50%, #ffe600 100%);
+      background-size: 200% 200%;
+      border: none;
+      border-radius: 60px;
+      cursor: pointer;
+      box-shadow: 0 0 35px rgba(255, 0, 119, 0.55),
+                  0 0 70px rgba(0, 240, 255, 0.35);
+      animation: gradientShift 4s ease infinite, buttonPulse 2s ease-in-out infinite;
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      width: 100%;
+      max-width: 340px;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-concert:active {
+      transform: scale(0.95);
+    }
+
+    .btn-concert svg {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
+
+    /* Aviso Requerido */
+    .instruction-note {
+      margin-top: 32px;
+      font-size: 0.95rem;
+      line-height: 1.45;
+      color: #e5e9f5;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 14px 20px;
+      border-radius: 14px;
+      max-width: 340px;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+
+    .instruction-note strong {
+      color: #ffd700;
+      display: block;
+      margin-bottom: 4px;
+      font-size: 1rem;
+    }
+
+    /* Interfaz Durante el Concierto (HUD) */
+    #concertHud {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 18px 16px;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+    }
+
+    #concertHud.fade-out {
+      opacity: 0;
+    }
+
+    /* Barra Superior Informativa */
+    .hud-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: auto;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      color: #ffffff;
+    }
+
+    .indicator-mic {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #00ff66;
+      box-shadow: 0 0 8px #00ff66;
+      animation: pulseSubtle 1.2s infinite;
+    }
+
+    .hud-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-icon {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn-icon svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    /* Selector de Paletas / Canciones (Inferior) */
+    .hud-bottom {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: center;
+      pointer-events: auto;
+      max-width: 500px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .palette-selector {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      width: 100%;
+      padding: 8px 4px;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 24px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
+    .palette-selector::-webkit-scrollbar {
+      display: none;
+    }
+
+    .palette-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 18px;
+      color: #d0d4e4;
+      font-size: 0.8rem;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .palette-btn.active {
+      background: rgba(255, 255, 255, 0.18);
+      border-color: rgba(255, 255, 255, 0.5);
+      color: #ffffff;
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.25);
+    }
+
+    .color-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.4);
+    }
+
+    /* Sensibilidad / Contenedor con modos y ajuste fino */
+    .sensitivity-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      background: rgba(0, 0, 0, 0.65);
+      padding: 10px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .sensitivity-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .sens-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #9ba3be;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .sens-btn {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #a0a8c2;
+      font-size: 0.75rem;
+      font-weight: 700;
+      cursor: pointer;
+      padding: 5px 12px;
+      border-radius: 12px;
+      transition: all 0.2s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .sens-btn.active {
+      color: #00ffaa;
+      background: rgba(0, 255, 170, 0.18);
+      border-color: rgba(0, 255, 170, 0.5);
+      box-shadow: 0 0 10px rgba(0, 255, 170, 0.25);
+    }
+
+    .sens-slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .sens-slider-row span {
+      font-size: 0.7rem;
+      color: #8c93af;
+      white-space: nowrap;
+    }
+
+    .sens-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.25);
+      outline: none;
+    }
+
+    .sens-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #00ffaa;
+      cursor: pointer;
+      box-shadow: 0 0 10px #00ffaa;
+    }
+
+    .sens-slider::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #00ffaa;
+      cursor: pointer;
+      box-shadow: 0 0 10px #00ffaa;
+      border: none;
+    }
+
+    .sens-badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #00ffaa;
+      min-width: 32px;
+      text-align: right;
+    }
+
+    /* Mensaje flotante de interacción */
+    .tap-hint {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 0.75rem;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 1s ease;
+      text-align: center;
+    }
+
+    /* Animaciones */
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    @keyframes buttonPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.03); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes pulseSubtle {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Lienzo de visualización acelerado por hardware -->
+  <canvas id="lightCanvas"></canvas>
+  <div id="flashOverlay"></div>
+
+  <!-- PANTALLA 1: Inicio Minimalista / Permisos (Requisito 1) -->
+  <div id="startScreen">
+    <div class="badge">
+      <span class="badge-dot"></span>
+      Sincronización en Vivo
+    </div>
+
+    <h1 class="title">Experiencia<br>del Concierto</h1>
+
+    <!-- Botón Grande Principal -->
+    <button id="btnStart" class="btn-concert" aria-label="Activar Modo Concierto">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+      </svg>
+      ACTIVAR MODO CONCIERTO
+    </button>
+
+    <!-- Aviso Requerido -->
+    <div class="instruction-note">
+      <strong>⚠️ Recomendación</strong>
+      Sube el brillo de tu pantalla al 100% y permite el acceso al micrófono.
+    </div>
+  </div>
+
+  <!-- PANTALLA 2: Interfaz en Vivo (HUD Discreto - Requisito 3) -->
+  <div id="concertHud" class="hidden">
+    <!-- Barra Superior -->
+    <div class="hud-top">
+      <div class="status-pill">
+        <span class="indicator-mic" id="micStatus"></span>
+        <span id="statusText">Escuchando en vivo</span>
+      </div>
+
+      <div class="hud-actions">
+        <!-- Alternar Pantalla Completa Manual si se sale -->
+        <button id="btnFullscreen" class="btn-icon" title="Pantalla Completa" aria-label="Pantalla Completa">
+          <svg viewBox="0 0 24 24">
+            <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Pista de pulsación si los controles se ocultan -->
+    <div id="tapHint" class="tap-hint">Toca la pantalla para cambiar de canción o ajustar</div>
+
+    <!-- Barra Inferior de Control de Paletas y Canciones -->
+    <div class="hud-bottom">
+      <div class="palette-selector" role="radiogroup" aria-label="Selector de canción">
+        <button class="palette-btn active" data-palette="fuchsia" aria-label="Canción Se fue: Fucsia">
+          <span class="color-swatch" style="background: #ff007f;"></span>
+          Se fue
+        </button>
+        <button class="palette-btn" data-palette="blue" aria-label="Canción Soledad: Azul Eléctrico">
+          <span class="color-swatch" style="background: #0088ff;"></span>
+          Soledad
+        </button>
+        <button class="palette-btn" data-palette="gold" aria-label="Canción Viveme: Dorado">
+          <span class="color-swatch" style="background: #ffd700;"></span>
+          Viveme
+        </button>
+        <button class="palette-btn" data-palette="white" aria-label="Canción Lenta: Blanco Puro">
+          <span class="color-swatch" style="background: #ffffff;"></span>
+          Blanco
+        </button>
+        <button class="palette-btn" data-palette="rainbow" aria-label="Modo Arcoíris Automático">
+          <span class="color-swatch" style="background: linear-gradient(45deg, #f00, #ff0, #0f0, #00f);"></span>
+          Arcoíris
+        </button>
+      </div>
+
+      <!-- Calibración acústica con Modos y Ajuste Fino -->
+      <div class="sensitivity-container">
+        <div class="sensitivity-bar">
+          <span class="sens-title">Modo:</span>
+          <button class="sens-btn" data-sens="low">Estadio</button>
+          <button class="sens-btn active" data-sens="mid">Concierto</button>
+          <button class="sens-btn" data-sens="high">Acústico</button>
+        </div>
+        <div class="sens-slider-row">
+          <span>Sensibilidad:</span>
+          <input type="range" id="sensSlider" min="0.3" max="2.5" step="0.1" value="1.0" class="sens-slider" aria-label="Ajuste fino de sensibilidad">
+          <span id="sensBadge" class="sens-badge">1.0x</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * EXPERIENCIA INTERACTIVA DE CONCIERTO PARA MÓVILES (SPA PWA)
+     * Compatible con Safari iOS y Chrome Android.
+     * Tecnologías: Web Audio API, Screen Wake Lock API, Fullscreen API, Canvas 2D.
+     */
+
+    // --- 1. DEFINICIÓN DE PALETAS DE COLOR VIBRANTES ---
+    const PALETTES = {
+      fuchsia: {
+        name: 'Se fue',
+        primary: [255, 0, 127],       // #ff007f Fucsia Neón
+        secondary: [140, 0, 255],     // Púrpura eléctrico
+        flash: [255, 180, 230],
+        glowRadius: 1.4
+      },
+      blue: {
+        name: 'Soledad',
+        primary: [0, 180, 255],       // #00b4ff Azul Eléctrico
+        secondary: [0, 40, 255],      // Azul cobalto
+        flash: [180, 235, 255],
+        glowRadius: 1.5
+      },
+      gold: {
+        name: 'Viveme',
+        primary: [255, 190, 0],       // #ffbe00 Dorado Cálido
+        secondary: [255, 60, 0],      // Fuego / Ámbar
+        flash: [255, 245, 200],
+        glowRadius: 1.6
+      },
+      white: {
+        name: 'Blanco',
+        primary: [255, 255, 255],
+        secondary: [180, 190, 210],
+        flash: [255, 255, 255],
+        glowRadius: 1.2
+      },
+      rainbow: {
+        name: 'Arcoíris',
+        isDynamic: true,
+        glowRadius: 1.5
+      }
+    };
+
+    let currentPaletteKey = 'fuchsia';
+    let rainbowHue = 0;
+
+    // --- 2. CONFIGURACIÓN DE AUDIO Y SENSIBILIDAD ---
+    let audioCtx = null;
+    let analyser = null;
+    let microphoneStream = null;
+    let dataArray = null;
+
+    // Calibración acústica según entorno (umbrales calibrados para no saturar con sonido ambiental)
+    // - Estadio: volumen extremo (PA de estadio, >95 dB). Umbral alto para filtrar gritos y sonido difuso.
+    // - Concierto: salas de conciertos/teatros (80-95 dB). Sensibilidad equilibrada para bombo y bajo.
+    // - Acústico: ensayos o música en altavoces caseros (65-80 dB). Mayor sensibilidad pero con filtro de ruido.
+    const SENSITIVITY_CONFIGS = {
+      low:  { name: 'Estadio',   minEnergy: 140, thresholdMultiplier: 1.55, decayRate: 0.96 },
+      mid:  { name: 'Concierto', minEnergy: 95,  thresholdMultiplier: 1.40, decayRate: 0.94 },
+      high: { name: 'Acústico',  minEnergy: 55,  thresholdMultiplier: 1.25, decayRate: 0.91 }
+    };
+
+    let currentSensMode = 'mid';
+    let sensFineMultiplier = 1.0; // Multiplicador del slider (0.3x a 2.5x)
+
+    // Variables de detección de golpes de graves y piso de ruido adaptativo
+    let beatCutoff = 0;
+    let beatIntensity = 0;
+    let smoothedVolume = 0;
+    let ambientNoiseFloor = 25; // Nivel estimado de ruido ambiente
+    let lastBeatTime = 0;
+
+    // --- 3. REFERENCIAS DEL DOM ---
+    const startScreen = document.getElementById('startScreen');
+    const concertHud = document.getElementById('concertHud');
+    const btnStart = document.getElementById('btnStart');
+    const btnFullscreen = document.getElementById('btnFullscreen');
+    const flashOverlay = document.getElementById('flashOverlay');
+    const lightCanvas = document.getElementById('lightCanvas');
+    const ctx = lightCanvas.getContext('2d', { alpha: false });
+    const tapHint = document.getElementById('tapHint');
+    const statusText = document.getElementById('statusText');
+    const sensSlider = document.getElementById('sensSlider');
+    const sensBadge = document.getElementById('sensBadge');
+
+    let hudTimer = null;
+    let wakeLock = null;
+
+    // --- 4. AJUSTE DE LIENZO DE PANTALLA ---
+    function resizeCanvas() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      lightCanvas.width = window.innerWidth * dpr;
+      lightCanvas.height = window.innerHeight * dpr;
+      ctx.scale(dpr, dpr);
+    }
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
+    resizeCanvas();
+
+    // --- 5. SCREEN WAKE LOCK API (Evitar que se apague la pantalla) ---
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          wakeLock = await navigator.wakeLock.request('screen');
+          wakeLock.addEventListener('release', () => {
+            console.log('Screen Wake Lock liberado.');
+          });
+          console.log('Screen Wake Lock activado exitosamente.');
+        } catch (err) {
+          console.warn(`Error al activar Wake Lock: ${err.name}, ${err.message}`);
+        }
+      } else {
+        console.warn('Screen Wake Lock API no está soportada en este navegador.');
+      }
+    }
+
+    // Re-adquirir Wake Lock si el usuario minimizó y volvió a abrir el navegador
+    document.addEventListener('visibilitychange', async () => {
+      if (wakeLock !== null && document.visibilityState === 'visible') {
+        await requestWakeLock();
+      }
+    });
+
+    // --- 6. MODO PANTALLA COMPLETA ---
+    async function activateFullscreen() {
+      const elem = document.documentElement;
+      try {
+        if (elem.requestFullscreen) {
+          await elem.requestFullscreen();
+        } else if (elem.webkitRequestFullscreen) { /* Safari iOS / macOS */
+          await elem.webkitRequestFullscreen();
+        } else if (elem.msRequestFullscreen) {
+          await elem.msRequestFullscreen();
+        }
+      } catch (err) {
+        console.warn('Pantalla completa no disponible o denegada:', err);
+      }
+    }
+
+    btnFullscreen.addEventListener('click', (e) => {
+      e.stopPropagation();
+      activateFullscreen();
+    });
+
+    // --- 7. WEB AUDIO API & CAPTURA DEL MICRÓFONO ---
+    async function initAudio() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioContextClass();
+
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
+      // Desactivamos procesamiento de voz (echoCancellation, noiseSuppression, autoGainControl)
+      // para que el navegador capture los graves de la música en vivo sin recortarlos
+      const constraints = {
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        }
+      };
+
+      try {
+        microphoneStream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (e) {
+        console.warn('Intentando acceso con restricciones por defecto:', e);
+        microphoneStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
+      const sourceNode = audioCtx.createMediaStreamSource(microphoneStream);
+      analyser = audioCtx.createAnalyser();
+
+      // Configuración de análisis en tiempo real
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.70; // Suavizado para estabilidad
+      sourceNode.connect(analyser);
+
+      const bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
+
+      statusText.textContent = "Sincronizado con la música";
+    }
+
+    // --- 8. ANÁLISIS DE FRECUENCIAS Y RITMO (BEAT DETECTION OPTIMIZADO) ---
+    function processAudioFrame() {
+      if (!analyser || !dataArray) {
+        return { bassEnergy: 0, overallVolume: 0, isBeatPulse: false };
+      }
+
+      analyser.getByteFrequencyData(dataArray);
+
+      // 1. Filtrado de graves: Bins 1 a 6 (60Hz a 220Hz - Bombo/Kick y bajo rítmico)
+      // Omitimos Bin 0 para evitar offset de corriente continua o ruidos por manipulación física del móvil
+      const bassStart = 1;
+      const bassEnd = 6;
+      let bassSum = 0;
+      for (let i = bassStart; i <= bassEnd; i++) {
+        bassSum += dataArray[i];
+      }
+      const rawBassEnergy = bassSum / (bassEnd - bassStart + 1);
+
+      // 2. Volumen general promedio
+      let totalSum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        totalSum += dataArray[i];
+      }
+      const overallVolume = totalSum / dataArray.length;
+
+      // 3. Estimador adaptativo de ruido ambiente (se adapta lentamente al ruido de fondo)
+      ambientNoiseFloor += (overallVolume - ambientNoiseFloor) * 0.015;
+
+      // Restamos el piso de ruido ambiental para que voces o murmullos no disparen efectos
+      const bassEnergy = Math.max(0, rawBassEnergy - ambientNoiseFloor * 0.85);
+
+      // 4. Parámetros ajustados por el modo y el slider de ajuste fino
+      const config = SENSITIVITY_CONFIGS[currentSensMode];
+      // Si el slider aumenta la sensibilidad (sensFineMultiplier > 1), se reduce el umbral de energía requerido
+      const effectiveMinEnergy = Math.max(15, config.minEnergy / sensFineMultiplier);
+      const effectiveMultiplier = 1.0 + (config.thresholdMultiplier - 1.0) / Math.sqrt(sensFineMultiplier);
+
+      const now = performance.now();
+      let isBeatPulse = false;
+
+      // Detección de beat con umbral dinámico y cooldown mínimo de 220ms (evita dobles disparos)
+      if (bassEnergy > beatCutoff && bassEnergy > effectiveMinEnergy && (now - lastBeatTime > 220)) {
+        isBeatPulse = true;
+        lastBeatTime = now;
+        beatIntensity = Math.min((bassEnergy - effectiveMinEnergy) / (255 - effectiveMinEnergy), 1.0);
+        // Elevamos el umbral para exigir que el sonido baje antes del siguiente golpe
+        beatCutoff = bassEnergy * effectiveMultiplier;
+      } else {
+        beatCutoff *= config.decayRate;
+        beatCutoff = Math.max(beatCutoff, effectiveMinEnergy);
+      }
+
+      // Suavizado del volumen para que el fondo respire de manera fluida y suave
+      const cleanVolume = Math.max(0, overallVolume - ambientNoiseFloor * 0.7);
+      smoothedVolume += (cleanVolume - smoothedVolume) * 0.15;
+
+      return { bassEnergy, overallVolume, isBeatPulse };
+    }
+
+    // --- 9. SISTEMA DE ONDAS DE AGUA SUAVES (LIQUID RIPPLES) ---
+    const ripples = [];
+
+    function addWaterRipple(cx, cy, color, intensity = 1.0) {
+      if (ripples.length > 5) ripples.shift(); // Control de memoria y rendimiento
+      ripples.push({
+        x: cx,
+        y: cy,
+        radius: 12,
+        maxRadius: Math.max(window.innerWidth, window.innerHeight) * 0.95,
+        progress: 0,
+        speed: 0.012 + (intensity * 0.005), // Expansión suave y gradual
+        color: color,
+        intensity: intensity
+      });
+    }
+
+    function renderWaterRipples(context) {
+      for (let i = ripples.length - 1; i >= 0; i--) {
+        const r = ripples[i];
+        r.progress += r.speed;
+        if (r.progress >= 1) {
+          ripples.splice(i, 1);
+          continue;
+        }
+
+        // Curva de expansión fluida (onda de agua natural)
+        const ease = Math.sin(r.progress * Math.PI * 0.5);
+        r.radius = 12 + ease * (r.maxRadius - 12);
+
+        // Opacidad suave tipo campana (fade in sutil y desvanecimiento progresivo prolongado)
+        const alpha = Math.sin(r.progress * Math.PI) * 0.26 * r.intensity;
+        if (alpha <= 0.002) continue;
+
+        // Ancho de la banda difusa que se expande orgánicamente
+        const bandWidth = 80 + ease * 140;
+        const inner = Math.max(0, r.radius - bandWidth * 0.5);
+        const outer = r.radius + bandWidth * 0.5;
+
+        // Gradiente radial anular continuo sin líneas duras
+        const waveGrad = context.createRadialGradient(r.x, r.y, inner, r.x, r.y, outer);
+        waveGrad.addColorStop(0, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0)`);
+        waveGrad.addColorStop(0.5, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, ${alpha})`);
+        waveGrad.addColorStop(1, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0)`);
+
+        context.fillStyle = waveGrad;
+        context.beginPath();
+        context.arc(r.x, r.y, outer, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+
+    // --- 10. BUCLE DE RENDERIZADO VISUAL A 60/120 FPS ---
+    function renderLoop() {
+      requestAnimationFrame(renderLoop);
+
+      const { bassEnergy, overallVolume, isBeatPulse } = processAudioFrame();
+
+      const width = window.innerWidth;
+      const height = window.innerHeight;
+      const cx = width / 2;
+      const cy = height / 2;
+
+      // Determinación de colores según la paleta actual
+      let colorPrimary, colorSecondary, colorFlash;
+
+      if (currentPaletteKey === 'rainbow') {
+        rainbowHue = (rainbowHue + (isBeatPulse ? 12 : 0.6) + (overallVolume / 255) * 1.5) % 360;
+        colorPrimary = hslToRgb(rainbowHue / 360, 1, 0.55);
+        colorSecondary = hslToRgb(((rainbowHue + 60) % 360) / 360, 1, 0.38);
+        colorFlash = [255, 255, 255];
+      } else {
+        const pal = PALETTES[currentPaletteKey];
+        colorPrimary = pal.primary;
+        colorSecondary = pal.secondary;
+        colorFlash = pal.flash;
+      }
+
+      // Al detectar un golpe de percusión, se genera una suave onda de agua
+      if (isBeatPulse) {
+        addWaterRipple(cx, cy, colorFlash, Math.max(0.65, beatIntensity));
+
+        // Destello ambiental sutil y no cegador
+        flashOverlay.style.backgroundColor = `rgb(${colorFlash[0]}, ${colorFlash[1]}, ${colorFlash[2]})`;
+        flashOverlay.style.opacity = Math.min(0.20 * (beatIntensity + 0.3), 0.35);
+        setTimeout(() => {
+          flashOverlay.style.opacity = '0';
+        }, 80);
+      }
+
+      // Intensidad de brillo suave y progresiva
+      const normVolume = Math.min(smoothedVolume / 110, 1.0);
+      const intensity = 0.30 + (normVolume * 0.70) + (isBeatPulse ? 0.20 : 0);
+
+      // 1. Fondo radial dinámico con caída suave
+      const gradientRadius = Math.max(width, height) * (0.85 + normVolume * 0.5);
+      const grad = ctx.createRadialGradient(cx, cy, 15, cx, cy, gradientRadius);
+
+      const r1 = Math.min(Math.round(colorPrimary[0] * intensity), 255);
+      const g1 = Math.min(Math.round(colorPrimary[1] * intensity), 255);
+      const b1 = Math.min(Math.round(colorPrimary[2] * intensity), 255);
+
+      const r2 = Math.min(Math.round(colorSecondary[0] * (intensity * 0.55)), 255);
+      const g2 = Math.min(Math.round(colorSecondary[1] * (intensity * 0.55)), 255);
+      const b2 = Math.min(Math.round(colorSecondary[2] * (intensity * 0.55)), 255);
+
+      grad.addColorStop(0, `rgb(${r1}, ${g1}, ${b1})`);
+      grad.addColorStop(0.55, `rgb(${r2}, ${g2}, ${b2})`);
+      grad.addColorStop(1, 'rgb(0, 0, 0)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+
+      // 2. Renderizado de ondas de agua con transición líquida y suave
+      renderWaterRipples(ctx);
+
+      // 3. Resplandor perimetral difuminado (ilumina el recinto suavemente)
+      if (normVolume > 0.45) {
+        const edgeAlpha = (normVolume - 0.45) * 0.35;
+        ctx.fillStyle = `rgba(${colorFlash[0]}, ${colorFlash[1]}, ${colorFlash[2]}, ${edgeAlpha})`;
+        ctx.fillRect(0, 0, width, 6);
+        ctx.fillRect(0, height - 6, width, 6);
+      }
+    }
+
+    // Utilidad de conversión HSL a RGB para el modo Arcoíris
+    function hslToRgb(h, s, l) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+
+    // --- 11. GESTIÓN DEL HUD (AUTO-OCULTAR PARA DISFRUTAR DEL SHOW) ---
+    function resetHudTimeout() {
+      concertHud.classList.remove('fade-out');
+      tapHint.style.opacity = '0';
+      clearTimeout(hudTimer);
+      hudTimer = setTimeout(() => {
+        concertHud.classList.add('fade-out');
+        tapHint.style.opacity = '0.5';
+      }, 4500);
+    }
+
+    // Al tocar la pantalla en modo concierto, se muestran los controles y se genera una onda táctil
+    window.addEventListener('click', (e) => {
+      if (startScreen.classList.contains('hidden')) {
+        resetHudTimeout();
+        // Si el toque no fue en la barra de controles, se genera una suave onda de agua táctil
+        if (!e.target.closest('#concertHud')) {
+          const pal = currentPaletteKey === 'rainbow' ? [255, 255, 255] : PALETTES[currentPaletteKey].flash;
+          addWaterRipple(e.clientX, e.clientY, pal, 0.75);
+        }
+      }
+    });
+
+    // --- 12. EVENTOS DE SELECCIÓN DE PALETA & SENSIBILIDAD ---
+    document.querySelectorAll('.palette-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.palette-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPaletteKey = btn.dataset.palette;
+        resetHudTimeout();
+      });
+    });
+
+    // Selección de modo de recinto (Estadio / Concierto / Acústico)
+    document.querySelectorAll('.sens-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.sens-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentSensMode = btn.dataset.sens;
+        resetHudTimeout();
+      });
+    });
+
+    // Slider de ajuste fino de sensibilidad
+    if (sensSlider) {
+      sensSlider.addEventListener('input', (e) => {
+        sensFineMultiplier = parseFloat(e.target.value);
+        if (sensBadge) {
+          sensBadge.textContent = sensFineMultiplier.toFixed(1) + 'x';
+        }
+        resetHudTimeout();
+      });
+      sensSlider.addEventListener('click', (e) => e.stopPropagation());
+    }
+
+    // --- 12. INICIO DE LA EXPERIENCIA (INTERACCIÓN PRINCIPAL DEL USUARIO) ---
+    btnStart.addEventListener('click', async () => {
+      btnStart.disabled = true;
+      btnStart.textContent = "CONECTANDO...";
+
+      try {
+        // Requisito 4: Screen Wake Lock
+        await requestWakeLock();
+
+        // Requisito 6: Modo Pantalla Completa
+        await activateFullscreen();
+
+        // Requisito 2: Acceso a Micrófono y Web Audio API
+        await initAudio();
+
+        // Transición visual limpia a pantalla de concierto
+        startScreen.classList.add('hidden');
+        concertHud.classList.remove('hidden');
+        resetHudTimeout();
+
+        // Iniciar render loop
+        renderLoop();
+      } catch (err) {
+        console.error('Error al iniciar modo concierto:', err);
+        alert('Para sincronizar con la música, por favor autoriza el micrófono y vuelve a intentar.');
+        btnStart.disabled = false;
+        btnStart.textContent = "ACTIVAR MODO CONCIERTO";
+      }
+    });
+
+    // --- 13. SOPORTE OFFLINE PWA MEDIANTE SERVICE WORKER (Requisito 5) ---
+    // Registra sw.js o un fallback embebido para garantizar funcionamiento
+    // 100% offline dentro del estadio/recinto sin cobertura.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => {
+            console.log('Service Worker registrado correctamente (PWA offline lista).', reg.scope);
+          })
+          .catch(() => {
+            // Fallback con Blob si se aloja en entornos sin archivo sw.js separado
+            try {
+              const swScript = `
+                const CACHE = 'modo-concierto-v1';
+                self.addEventListener('install', e => { self.skipWaiting(); e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', self.location.href]))); });
+                self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+                self.addEventListener('fetch', e => { e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).catch(() => caches.match(self.location.href)))); });
+              `;
+              const blob = new Blob([swScript], { type: 'application/javascript' });
+              navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(e => console.warn('SW fallback ignorado:', e));
+            } catch(e) {
+              console.warn('SW no soportado en este contexto.');
+            }
+          });
+      });
+    }
+  </script>
+</body>
+</html>
